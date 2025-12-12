@@ -1,11 +1,203 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-		<meta charset="UTF-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>钢琴音频</title>
+<meta charset="UTF-8"/>
+<title>彩色钢琴音频浏览器</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<style type="text/tailwindcss">
+  /* 基础白键样式 */
+  .white-key {
+    @apply relative border-r border-b border-gray-400 w-14 h-48 flex items-end justify-center text-xs text-gray-700 cursor-pointer transition-colors duration-100 shrink-0;
+  }
+  /* 黑键样式 */
+  .black-key {
+    @apply absolute bg-black text-white w-10 h-32 -ml-5 z-10 cursor-pointer flex items-end justify-center text-[10px] rounded-b active:bg-gray-800 shadow-md border-b-2 border-gray-900;
+  }
+  /* 八度组容器 */
+  .octave-group {
+    @apply flex relative shrink-0;
+  }
+  
+  /* 自定义滚动条样式 (可选) */
+  .scrollbar-hide::-webkit-scrollbar {
+      height: 12px;
+  }
+  .scrollbar-hide::-webkit-scrollbar-track {
+      background: #e5e7eb; 
+      border-radius: 4px;
+  }
+  .scrollbar-hide::-webkit-scrollbar-thumb {
+      background: #9ca3af; 
+      border-radius: 4px;
+  }
+  .scrollbar-hide::-webkit-scrollbar-thumb:hover {
+      background: #6b7280; 
+  }
+</style>
+
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="importmap">
+  {
+    "imports": {
+      "clsx": "https://esm.sh/clsx",
+      "react": "https://esm.sh/react",
+      "react-dom/client": "https://esm.sh/react-dom/client?standalone&external=react"
+    }
+  }
+</script>
+
+<script type="text/babel" data-type="module">
+  import React from 'react';
+  import { createRoot } from 'react-dom/client';
+  import clsx from 'clsx';
+
+  const white = ["C", "D", "E", "F", "G", "A", "B"];
+  const blackMap = { C: "C#", D: "D#", F: "F#", G: "G#", A: "A#" };
+
+  // 定义每组八度的背景色
+  const octaveColors = [
+    "bg-stone-200 hover:bg-stone-300 active:bg-stone-400",  // Group 0 (A0-B0)
+    "bg-red-50 hover:bg-red-100 active:bg-red-200",         // Group 1
+    "bg-orange-50 hover:bg-orange-100 active:bg-orange-200",// Group 2
+    "bg-amber-50 hover:bg-amber-100 active:bg-amber-200",   // Group 3
+    "bg-yellow-50 hover:bg-yellow-100 active:bg-yellow-200",// Group 4 (Middle C)
+    "bg-lime-50 hover:bg-lime-100 active:bg-lime-200",      // Group 5
+    "bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200", // Group 6
+    "bg-cyan-50 hover:bg-cyan-100 active:bg-cyan-200",      // Group 7
+    "bg-slate-200 hover:bg-slate-300 active:bg-slate-400"   // Group 8 (C8)
+  ];
+
+  function buildKeyboard(){
+    const keys = [];
+    for(let octave=0; octave<=8; octave++){
+      if(octave === 0){
+        keys.push({ type:'white', name:'A0', base:'A' });
+        keys.push({ type:'black', name:'A#0', base:'A' });
+        keys.push({ type:'white', name:'B0', base:'B' });
+        continue;
+      }
+      white.forEach(note => {
+        if (octave === 8 && note !== 'C') return; // C8 end
+
+        keys.push({ type:'white', name:`${note}${octave}`, base:note });
+        
+        if(octave !== 8 && blackMap[note]){
+          keys.push({ type:'black', name:`${blackMap[note]}${octave}`, base:note });
+        }
+      });
+    }
+    return keys;
+  }
+
+  const keys = buildKeyboard();
+
+  function playSound(name){
+    // 修改逻辑：将显示用的 # 替换为文件名用的 s
+    // 例如: "A#0" -> "As0", "C1" -> "C1"
+    const fileName = name.replace('#', 's');
+    
+    console.log(`Playing: data/${fileName}.wav`); // Debug log
+    const audio = new Audio(`data/${fileName}.wav`);
+    
+    audio.play().catch(e => {
+        console.warn(`无法播放: data/${fileName}.wav`);
+    });
+  }
+
+  function App(){
+    return (
+      <div className="flex flex-col h-screen bg-gray-100 overflow-hidden">
+        {/* Header */}
+        <div className="p-4 bg-white shadow-sm z-20 shrink-0">
+          <h1 className="text-center text-gray-800 font-bold text-2xl">钢琴 88 键全览</h1>
+          <p className="text-center text-gray-500 text-sm">
+            点击播放 | 不同颜色代表不同八度 | #号文件已映射为s (如 A#0 &rarr; As0.wav)
+          </p>
+        </div>
+
+        {/* Scroll Container */}
+        <div className="flex-1 overflow-x-auto overflow-y-hidden p-8 scrollbar-hide flex items-center">
+             <Keyboard/>
+        </div>
+      </div>
+    );
+  }
+
+  function Keyboard(){
+    let groups = [];
+    let current = [];
+
+    keys.forEach(k => {
+      // 遇到不带#的C，说明新的一组开始了
+      if(k.name.startsWith('C') && !k.name.includes('#') && current.length > 0){
+        groups.push(current);
+        current = [];
+      }
+      current.push(k);
+    });
+    if(current.length > 0) groups.push(current);
+
+    return (
+      // 关键样式修改：
+      // min-w-max: 强制宽度由内容撑开，不换行，不压缩
+      // mx-auto: 即使宽度小于屏幕也居中
+      <div className="relative flex min-w-max mx-auto border-t-[12px] border-gray-800 bg-gray-900 rounded-lg shadow-2xl pl-1 pr-1 pb-1 select-none">
+        {groups.map((grp, i)=>(
+          <OctaveGroup 
+            group={grp} 
+            key={i} 
+            colorClass={octaveColors[i] || "bg-white"}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  function OctaveGroup({ group, colorClass }){
+    const whiteKeysInThisGroup = group.filter(k => k.type === 'white');
+
+    return (
+      <div className="octave-group">
+        {/* Render White keys */}
+        {whiteKeysInThisGroup.map(k=>(
+          <div
+            key={k.name}
+            onMouseDown={()=>playSound(k.name)}
+            className={clsx("white-key", colorClass)}
+          >
+            <span className="mb-2 pointer-events-none">{k.name}</span>
+          </div>
+        ))}
+
+        {/* Render Black keys */}
+        {group.filter(k=>k.type==='black').map(k=>{
+          // 定位逻辑
+          const baseIndex = whiteKeysInThisGroup.findIndex(w => w.base === k.base);
+          const leftPos = baseIndex * 56 + 38; // 56是白键宽，38是偏移量
+
+          return (
+            <div
+              key={k.name}
+              onMouseDown={(e)=>{
+                e.stopPropagation();
+                playSound(k.name);
+              }}
+              className="black-key"
+              style={{ left: `${leftPos}px` }}
+            >
+              <span className="mb-2 pointer-events-none">{k.name}</span>
+            </div>
+          )
+        })}
+      </div>
+    );
+  }
+
+  createRoot(document.getElementById('root')).render(<App/>);
+</script>
 </head>
 <body>
-		<p>钢琴音频在/data目录下，示例： <a href="data/C4.wav">C4.wav</a> </p>
+<div id="root"></div>
 </body>
 </html>
